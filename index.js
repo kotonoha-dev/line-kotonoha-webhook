@@ -1,62 +1,51 @@
-import express from "express";
-import { Configuration, OpenAIApi } from "openai";
-import dotenv from "dotenv";
+import fetch from 'node-fetch';
 
-dotenv.config();
+export default async function handler(req, res) {
+  if (req.method === 'POST') {
+    const body = req.body;
+    const event = body.events?.[0];
 
-const app = express();
-app.use(express.json());
+    const replyToken = event?.replyToken;
+    const userMessage = event?.message?.text;
 
-// LINEからのPOSTを処理
-app.post("/", async (req, res) => {
-  const events = req.body.events;
-  if (!events || events.length === 0) {
-    return res.status(200).send("No events");
+    if (replyToken && userMessage) {
+      // ChatGPTに投げるリクエスト
+      const gptResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            { role: 'system', content: 'あなたはやさしく寄り添うAIです。' },
+            { role: 'user', content: userMessage }
+          ]
+        })
+      });
+
+      const gptData = await gptResponse.json();
+      const gptReply = gptData.choices?.[0]?.message?.content || 'ごめんなさい、うまく応答できませんでした。';
+
+      // LINEに返信を送信
+      await fetch('https://api.line.me/v2/bot/message/reply', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
+        },
+        body: JSON.stringify({
+          replyToken: replyToken,
+          messages: [{ type: 'text', text: gptReply }]
+        })
+      });
+
+      res.status(200).json({ message: 'Replied with GPT response' });
+    } else {
+      res.status(200).json({ message: 'No replyToken or message found' });
+    }
+  } else {
+    res.status(200).json({ message: 'ことのは Webhook is working!' });
   }
-
-  const event = events[0];
-  const userMessage = event.message?.text;
-
-  if (!userMessage) {
-    return res.status(200).send("No message");
-  }
-
-  // OpenAI API 設定
-  const configuration = new Configuration({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-  const openai = new OpenAIApi(configuration);
-
-  // ChatGPTからの応答取得
-  const completion = await openai.createChatCompletion({
-    model: "gpt-3.5-turbo",
-    messages: [
-      {
-        role: "system",
-        content: "あなたはやさしいAIです。敬語で短くLINEのように返してください。",
-      },
-      {
-        role: "user",
-        content: userMessage,
-      },
-    ],
-  });
-
-  const gptReply = completion.data.choices[0].message.content;
-
-  // LINEのWebhook応答として返す（デモ用にログだけ）
-  console.log("GPTの返答:", gptReply);
-
-  // LINEからのWebhookには200だけ返して、実際の送信は未実装
-  res.status(200).send("OK");
-});
-
-// Webhookの確認用
-app.get("/", (req, res) => {
-  res.json({ message: "ことのは Webhook is working!" });
-});
-
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+}
