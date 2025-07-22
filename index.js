@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     const userMessage = event.message.text;
     const replyToken = event.replyToken;
 
-    // OpenAI API でことのは構文に変換して返信を作成
+    // OpenAI APIで「ことのは構文」に変換
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -45,10 +45,12 @@ export default async function handler(req, res) {
     });
 
     const aiData = await openaiResponse.json();
+    console.log('OpenAI response:', aiData);  // ← この行を追加
+
     const replyText =
       aiData.choices?.[0]?.message?.content || '…（うまく応答できなかったみたい）';
 
-    // LINEに返す
+    // LINEに返答送信
     await fetch('https://api.line.me/v2/bot/message/reply', {
       method: 'POST',
       headers: {
